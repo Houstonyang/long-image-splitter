@@ -21,14 +21,15 @@
 而在**请求发出之前**把长图切开就同时解决了两个问题：每段都保持足够宽度让文字清晰，
 相邻段留一小段重叠，避免一行字正好被切在边界上。
 
-这个项目最早是一个自用 QQ 机器人插件，后来把里面与宿主、与图片库耦合的部分抽出来，
-做成了现在这个**宿主无关、解码器可插拔**的独立库。
+这个项目最早是一个自用 QQ 机器人插件（[QQ Agent](https://github.com/K0nd1us/QQ-agent)）。
+后来把里面与宿主、与图片库耦合的部分全部抽出来，做成了现在这个**宿主无关、解码器可插拔**的独立库，
+QQ Agent 适配层则退化成了仓库里的一个示例 —— 约 60 行，放在 `hosts/qq-agent/`。
 
 ---
 
 ## 特性
 
-- **宿主无关** —— 核心是纯函数、零运行时依赖，能接任何 JS/TS 宿主（QQ 机器人、客服系统、自己的后端）。
+- **核心零依赖** —— `src/` 是纯函数，不 import 任何宿主、任何图片库；所有测试跑在纯 Node 环境下。
 - **解码器可插拔** —— Electron 内置 / sharp / jimp / 自带纯 JS BMP，探测不到就**安全空转**，绝不改坏消息。
 - **阈值全部可配** —— 切分规则集中在 [`src/limits.js`](src/limits.js)，一个 `options` 就能改。
 - **有测试、有演示** —— `npm test` 跑 91 项断言；`npm run demo` 真解码真裁切，并**逐像素校验**重叠区。
@@ -59,7 +60,28 @@
 
 ## 快速开始
 
-### 装进 QQ Agent
+### 1. 作为库使用
+
+```js
+// 仓库内直接引用；发布成包后就是 import ... from 'long-image-splitter'
+import {
+  resolveDecoder, splitRequestImages, splitImageBuffer
+} from './src/index.js';
+import { createElectronDecoder } from './src/decoders/electron.js';
+import { nodeDecoders } from './src/decoders/node.js';
+import { bmpDecoder } from './src/decoders/bmp.js';
+
+// 挑一个当前环境能用的解码器：Electron → sharp → jimp → 内置 BMP
+const decoder = await resolveDecoder([createElectronDecoder(), ...nodeDecoders(), bmpDecoder]);
+
+// 用法 A：改造 OpenAI 格式的请求体
+const body2 = await splitRequestImages(body, { decoder, log: console.log });
+
+// 用法 B：手上只有一张图，直接拿分段结果
+const { split, tiles } = await splitImageBuffer(bytes, { decoder });
+```
+
+### 2. 装进 QQ Agent
 
 ```bash
 git clone https://github.com/Houstonyang/long-image-splitter.git
@@ -86,47 +108,38 @@ npm run build          # 生成 dist/long-image-splitter/（可直接安装的�
 > 如果你之前装过单文件版的 `long-image-reader`，建议**先禁用它**。
 > 本项目靠注入文本里的标记做了幂等，两个同时开也不会把图切两遍，但没必要留两份。
 
-### 在别的 Node 宿主里用
-
-```js
-import {
-  resolveDecoder, splitRequestImages, splitImageBuffer
-} from 'long-image-splitter';
-import { createElectronDecoder } from 'long-image-splitter/decoders/electron';
-import { nodeDecoders } from 'long-image-splitter/decoders/node';
-import { bmpDecoder } from 'long-image-splitter/decoders/bmp';
-
-// 挑一个当前环境能用的解码器：Electron → sharp → jimp → 内置 BMP
-const decoder = await resolveDecoder([createElectronDecoder(), ...nodeDecoders(), bmpDecoder]);
-
-// 用法 A：改造 OpenAI 格式的请求体
-const body2 = await splitRequestImages(body, { decoder, log: console.log });
-
-// 用法 B：手上只有一张图，直接拿分段结果
-const { split, tiles } = await splitImageBuffer(bytes, { decoder });
-```
-
 ---
 
-## 三层结构
+## 架构边界：什么属于核心，什么属于宿主
+
+这是本项目最想讲清楚的一件事 —— **"通用"不是设计意图，是每次 CI 都在验证的事实**。
 
 ```
 ┌────────────────────────────────────────────────┐
-│ 宿主适配层  hosts/qq-agent/index.js             │  ~60 行，只做"翻译"
+│ 宿主适配层  hosts/qq-agent/          ~60 行     │  ← 唯一与具体宿主耦合的地方
 │   providers: llm.request-params / retry-advisor │
 ├────────────────────────────────────────────────┤
-│ 核心层（宿主无关、零依赖、纯逻辑）                │
-│   src/plan.js      分段数学（纯函数）            │
-│   src/split.js     解码 → 裁切 → 缩放 → 编码     │
-│   src/fallback.js  失败兜底 + 拒收降级建议        │
-│   src/decoder.js   解码器接口 + base64 工具       │
+│ 核心层  src/                        零依赖      │  ← 不 import 任何宿主、任何图片库
+│   plan.js      分段数学（纯函数）                │
+│   split.js     解码 → 裁切 → 缩放 → 编码         │
+│   fallback.js  失败兜底 + 拒收降级建议            │
+│   decoder.js   解码器接口 + base64 工具           │
 ├────────────────────────────────────────────────┤
-│ 解码器层（可插拔）                               │
-│   decoders/electron.js  Chromium 内置解码器      │
-│   decoders/node.js      sharp / jimp（可选）     │
-│   decoders/bmp.js       纯 JS，零依赖            │
+│ 解码器层  src/decoders/             惰性加载     │  ← 拿不到就跳过，不报错
+│   electron.js   Chromium 内置解码器              │
+│   node.js       sharp / jimp（可选）             │
+│   bmp.js        纯 JS，零依赖                    │
 └────────────────────────────────────────────────┘
 ```
+
+| | 位置 | 依赖 |
+|---|---|---|
+| 核心 | `src/*.js` | 零运行时依赖，不认识"宿主"这个概念 |
+| 解码器 | `src/decoders/*.js` | Electron / sharp / jimp 全部 `import()` 惰性探测 |
+| 宿主适配 | `hosts/qq-agent/` | 唯一知道 QQ Agent 存在的地方 |
+
+6 个测试文件**全部跑在纯 Node 环境下**（不加载 Electron、不加载 QQ Agent、不联网）。
+其中 5 个只针对 `src/`，把 `hosts/` 整个删掉也丝毫不受影响 —— 适配层是可选的示例，不是项目的组成部分。
 
 **解码器接口**（想让项目支持别的图片库，只要实现这几个东西）：
 
@@ -152,7 +165,7 @@ const decoder = {
 
 ## 接别的宿主
 
-核心不认识任何宿主概念。接一个新宿主就是写一层适配：
+核心不认识任何宿主概念。接一个新宿主就是写一层适配（`hosts/qq-agent/` 就是照这个写的）：
 
 ```js
 import { resolveDecoder, splitRequestImages, stripRejectedImages } from 'long-image-splitter';
@@ -280,7 +293,7 @@ BMP 编解码、以及 QQ Agent 适配层（含"环境不满足时必须安全�
 
 ```
 long-image-splitter/
-├── src/                      核心（宿主无关）
+├── src/                      核心（宿主无关，零依赖）
 │   ├── limits.js             全部阈值与限额
 │   ├── plan.js               分段数学（纯函数）
 │   ├── split.js              分段流水线
@@ -291,12 +304,12 @@ long-image-splitter/
 │       ├── electron.js       Electron nativeImage
 │       ├── node.js           sharp / jimp（可选）
 │       └── bmp.js            纯 JS BMP + 内存图片
-├── hosts/qq-agent/           QQ Agent 适配层
-│   ├── plugin.json           插件清单
-│   └── index.js              providers 实现
-├── test/                     单测（6 个文件）
+├── hosts/qq-agent/           宿主适配示例（清单 + providers）
+│   ├── plugin.json
+│   └── index.js
+├── test/                     单测（6 个文件，纯 Node 环境）
 ├── tools/
-│   ├── build-plugin.mjs      生成 hosts/.../lib/ 与 dist/
+│   ├── build-plugin.mjs      生成 lib/ 与 dist/
 │   └── run-tests.mjs         跨 Node 版本的测试入口
 ├── .github/workflows/ci.yml  Node 20/22/24 上跑 build + test + demo
 ├── demo.mjs                  端到端演示
@@ -319,5 +332,6 @@ npm run demo      # 端到端演示
 
 [MIT](LICENSE) © 2026 Houstonyang
 
-本项目是 [QQ Agent](https://github.com/Kondius/qq-agent) 的第三方插件，与该项目**无从属关系**；
+本项目是 [QQ Agent](https://github.com/K0nd1us/QQ-agent) 的**第三方插件**，与该项目无从属关系；
+仓库里的 `hosts/qq-agent/` 只是一层适配示例，删掉它核心依然完整可用。
 QQ Agent 本身同样以 MIT 许可发布。
