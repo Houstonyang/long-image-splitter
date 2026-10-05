@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22, 24]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 使用 Node ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # 本项目零运行时依赖，不需要 npm install
+      - name: 构建可安装的插件目录
+        run: npm run build
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 端到端演示（含重叠区逐像素校验）
+        run: npm run demo

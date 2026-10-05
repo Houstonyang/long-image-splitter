@@ -1,0 +1,50 @@
+{
+  "name": "long-image-splitter",
+  "version": "2.0.0",
+  "description": "长图分段器：把长截图/长图在提交视觉模型前自动切成带重叠的连续分段。宿主无关、解码器可插拔、零运行时依赖。",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./decoders/electron": "./src/decoders/electron.js",
+    "./decoders/bmp": "./src/decoders/bmp.js",
+    "./decoders/node": "./src/decoders/node.js"
+  },
+  "files": [
+    "src",
+    "hosts",
+    "tools/build-plugin.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node tools/build-plugin.mjs",
+    "test": "node tools/run-tests.mjs",
+    "demo": "node demo.mjs"
+  },
+  "keywords": [
+    "long-image",
+    "screenshot",
+    "vision",
+    "llm",
+    "multimodal",
+    "image-split",
+    "qq-agent",
+    "plugin"
+  ],
+  "author": "Houstonyang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Houstonyang/long-image-splitter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Houstonyang/long-image-splitter/issues"
+  },
+  "homepage": "https://github.com/Houstonyang/long-image-splitter#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
+  "dependencies": {}
+}

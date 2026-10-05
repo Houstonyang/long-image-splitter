@@ -1,0 +1,16 @@
+# 依赖与构建产物
+node_modules/
+dist/
+hosts/qq-agent/lib/
+
+# demo 输出（npm run demo 可随时重建）
+out/
+
+# 日志与杂项
+*.log
+.DS_Store
+Thumbs.db
+
+# 本地临时脚本与日志
+_*.ps1
+_*.log

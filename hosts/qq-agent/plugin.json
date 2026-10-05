@@ -1,0 +1,15 @@
+{
+  "id": "long-image-splitter",
+  "name": "长图分段器（通用版）",
+  "version": "2.0.0",
+  "apiVersion": 1,
+  "category": "media",
+  "description": "提交模型前把长截图切成带重叠的连续分段：宽度最高保留 1200px、单段不超过 1800px、相邻段重叠约 120px；图片被接口拒收时建议去掉图片重试文字。解码器可插拔（Electron 内置 / sharp / jimp），零额外安装。",
+  "author": "杨梓淇",
+  "enabledByDefault": false,
+  "requires": [],
+  "capabilities": ["llm.request-params", "llm.retry-advisor"],
+  "permissions": [],
+  "settings": {},
+  "configSchema": {}
+}

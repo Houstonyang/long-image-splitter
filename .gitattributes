@@ -1,0 +1,8 @@
+# 统一按 LF 存进仓库，检出时按平台转换 —— 避免 Windows 提交产生整文件级 diff 噪音
+* text=auto
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.bmp binary
+*.ico binary
