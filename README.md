@@ -1,6 +1,6 @@
 # 长图分段器 · long-image-splitter
 
-> Split long screenshots into overlapping tiles **before** they are sent to a vision model — so the text stays readable and the request stops getting rejected.
+> Split long screenshots into overlapping tiles **before** they are sent to a vision model, with configurable size limits and decoder adapters.
 
 [![CI](https://github.com/Houstonyang/long-image-splitter/actions/workflows/ci.yml/badge.svg)](https://github.com/Houstonyang/long-image-splitter/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -8,6 +8,17 @@
 [![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
 
 把**长截图 / 长图**在提交给视觉模型之前，自动切成**带重叠的连续分段**。
+
+## 项目成果与使用情况
+
+| 项目 | 当前状态 | 依据与范围 |
+| --- | --- | --- |
+| 独立核心与 QQ Agent 适配层 | 已实现并开源 | 分段规则、解码器接口与宿主适配分离，可作为库接入其他 Node 宿主 |
+| 插件市场分发 | 已上架，累计下载量 **100+ 次** | 维护者提供的市场统计，截至 **2026-10-07**；对应此前发布的长图分段插件 |
+| 自动测试 | **91 项测试通过** | 2026-10-07 本地复跑，覆盖分段、解码、请求改写、兜底和适配层 |
+| 像素级演示 | 已通过 | 窄长图与宽长图的 BMP 解码、裁切、缩放、编码及相邻重叠区校验，普通短图原样放行 |
+
+下载量是市场插件的累计下载次数，不代表独立用户数，也不等于本仓库通用库的使用量。自动测试与 BMP 演示不替代各视觉模型、生产解码器和其他宿主的实际联调，也不承诺识字准确率或接口一定接受请求。
 
 ---
 
@@ -18,8 +29,8 @@
 - **整张等比缩小** → 文字糊成一团，模型读不出来；
 - **不缩小** → 又会被很多模型接口以体积或尺寸为由直接拒收。
 
-而在**请求发出之前**把长图切开就同时解决了两个问题：每段都保持足够宽度让文字清晰，
-相邻段留一小段重叠，避免一行字正好被切在边界上。
+在**请求发出之前**切分长图，可以减少整图缩小带来的文字细节损失，并分别约束分段尺寸与体积。
+相邻段保留重叠区，降低跨段文字缺失的风险；最终识别效果和请求限额仍取决于所用模型接口。
 
 这个项目最早是一个自用 QQ 机器人插件（[QQ Agent](https://github.com/K0nd1us/QQ-agent)）。
 后来把里面与宿主、与图片库耦合的部分全部抽出来，做成了现在这个**宿主无关、解码器可插拔**的独立库，
@@ -29,8 +40,8 @@ QQ Agent 适配层则退化成了仓库里的一个示例 —— 约 60 行，�
 
 ## 特性
 
-- **核心零依赖** —— `src/` 是纯函数，不 import 任何宿主、任何图片库；所有测试跑在纯 Node 环境下。
-- **解码器可插拔** —— Electron 内置 / sharp / jimp / 自带纯 JS BMP，探测不到就**安全空转**，绝不改坏消息。
+- **核心零运行时依赖** —— 分段规划是纯函数，处理流水线通过注入的解码器读写图片，不直接依赖具体宿主或图片库；所有测试跑在纯 Node 环境下。
+- **解码器可插拔** —— Electron 内置 / sharp / jimp；自带纯 JS BMP 用于离线测试与演示。QQ Agent 适配层探测不到可用解码器时原样放行请求。
 - **阈值全部可配** —— 切分规则集中在 [`src/limits.js`](src/limits.js)，一个 `options` 就能改。
 - **有测试、有演示** —— `npm test` 跑 91 项断言；`npm run demo` 真解码真裁切，并**逐像素校验**重叠区。
 
@@ -69,10 +80,10 @@ import {
 } from './src/index.js';
 import { createElectronDecoder } from './src/decoders/electron.js';
 import { nodeDecoders } from './src/decoders/node.js';
-import { bmpDecoder } from './src/decoders/bmp.js';
 
-// 挑一个当前环境能用的解码器：Electron → sharp → jimp → 内置 BMP
-const decoder = await resolveDecoder([createElectronDecoder(), ...nodeDecoders(), bmpDecoder]);
+// 生产图片：Electron → sharp → jimp；普通 Node 环境需自行安装 sharp 或 jimp。
+// 没有可用解码器时抛出 NO_DECODER，由宿主决定提示或原样放行。
+const decoder = await resolveDecoder([createElectronDecoder(), ...nodeDecoders()]);
 
 // 用法 A：改造 OpenAI 格式的请求体
 const body2 = await splitRequestImages(body, { decoder, log: console.log });
@@ -80,6 +91,9 @@ const body2 = await splitRequestImages(body, { decoder, log: console.log });
 // 用法 B：手上只有一张图，直接拿分段结果
 const { split, tiles } = await splitImageBuffer(bytes, { decoder });
 ```
+
+`body` 是宿主提供的 OpenAI Chat Completions 格式请求体，`bytes` 是原图字节。
+内置 BMP 解码器用于离线演示，示例见 [`demo.mjs`](demo.mjs)，不加入生产图片回退链。
 
 ### 2. 装进 QQ Agent
 
@@ -112,7 +126,7 @@ npm run build          # 生成 dist/long-image-splitter/（可直接安装的�
 
 ## 架构边界：什么属于核心，什么属于宿主
 
-这是本项目最想讲清楚的一件事 —— **"通用"不是设计意图，是每次 CI 都在验证的事实**。
+核心和宿主适配通过明确接口分离。CI 在纯 Node 环境验证核心与适配层的测试行为；新增宿主仍需实现接入并完成实际联调。
 
 ```
 ┌────────────────────────────────────────────────┐
@@ -139,7 +153,7 @@ npm run build          # 生成 dist/long-image-splitter/（可直接安装的�
 | 宿主适配 | `hosts/qq-agent/` | 唯一知道 QQ Agent 存在的地方 |
 
 6 个测试文件**全部跑在纯 Node 环境下**（不加载 Electron、不加载 QQ Agent、不联网）。
-其中 5 个只针对 `src/`，把 `hosts/` 整个删掉也丝毫不受影响 —— 适配层是可选的示例，不是项目的组成部分。
+其中 5 个只针对 `src/`，另 1 个验证 QQ Agent 适配层。适配层是仓库提供的可选接入实现，核心运行不依赖它。
 
 **解码器接口**（想让项目支持别的图片库，只要实现这几个东西）：
 
@@ -168,14 +182,15 @@ const decoder = {
 核心不认识任何宿主概念。接一个新宿主就是写一层适配（`hosts/qq-agent/` 就是照这个写的）：
 
 ```js
-import { resolveDecoder, splitRequestImages, stripRejectedImages } from 'long-image-splitter';
-import { createElectronDecoder } from 'long-image-splitter/decoders/electron';
+import { resolveDecoder, splitRequestImages, stripRejectedImages } from './src/index.js';
+import { createElectronDecoder } from './src/decoders/electron.js';
+import { nodeDecoders } from './src/decoders/node.js';
 
 let decoder = null;
 
 export async function setup(bot) {
   try {
-    decoder = await resolveDecoder([createElectronDecoder()]);
+    decoder = await resolveDecoder([createElectronDecoder(), ...nodeDecoders()]);
     bot.log('长图分段器就绪：' + decoder.name);
   } catch (error) {
     // 关键：不要抛。让插件保持"已加载但空转"，问题可见、消息安全
@@ -188,7 +203,7 @@ export async function beforeSend(body) {
   return splitRequestImages(body, { decoder });
 }
 
-export function onRejected(errorText, status) {
+export function onRejected(body, errorText, status) {
   if (!decoder) return null;
   return stripRejectedImages({ body, errorText, status });
 }
@@ -230,7 +245,7 @@ await splitRequestImages(body, {
 | 决策 | 理由 |
 |---|---|
 | 裁切矩形在原图坐标算，缩放只作用于分段 | 少一次重采样，文字更清楚 |
-| 失败时注入"读不到图"的文字，而不是丢掉图片 | 让模型如实说"看不到"，而不是编内容 |
+| 处理失败时将对应图片替换为"读不到图"的文字说明 | 向模型明确本次图片不可用，降低猜测内容的风险 |
 | 只给降级**建议**，不自己发请求 | 超时、重试、计费口径必须留在宿主手里，否则会出现"偷偷多打一次 API" |
 | 用注入标记做幂等 | 多个分段插件、重复执行都不会把同一张图切两遍 |
 | 解码器惰性探测 + 探测不到就空转 | 宿主升级/换环境时最坏的结果是"功能不生效"，而不是"消息被改坏" |
