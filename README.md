@@ -347,6 +347,6 @@ npm run demo      # 端到端演示
 
 [MIT](LICENSE) © 2026 Houstonyang
 
-本项目是 [QQ Agent](https://github.com/K0nd1us/QQ-agent) 的**第三方插件**，与该项目无从属关系；
-仓库里的 `hosts/qq-agent/` 只是一层适配示例，删掉它核心依然完整可用。
+本项目是**宿主无关的长图分段库**，提供 [QQ Agent](https://github.com/K0nd1us/QQ-agent) 的第三方插件适配层，与 QQ Agent 项目无从属关系。
+仓库里的 `hosts/qq-agent/` 是可选的接入实现，核心可独立使用；接入其他宿主时需要完成对应适配与验证。
 QQ Agent 本身同样以 MIT 许可发布。
